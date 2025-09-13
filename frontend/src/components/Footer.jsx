@@ -1,4 +1,4 @@
-import logo from '/logod.png'
+import logo from '../public/logod.png'
 
 function Footer() {
   return (

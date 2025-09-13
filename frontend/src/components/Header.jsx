@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react'
-import logo from '/logod.png'
+import logo from '../public/logod.png'
 
 function Header() {
   const [walletAddress, setWalletAddress] = useState('')
