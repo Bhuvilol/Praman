@@ -1,9 +1,11 @@
 function HeroSection() {
   return (
     <div className="text-center mb-8">
-      <h1 className="text-6xl font-black text-gray-900 mb-6 tracking-wider" style={{ fontFamily: 'Nunito, -apple-system, BlinkMacSystemFont, sans-serif' }}>
-        PRAMAN
-      </h1>
+      <img 
+        src="/logod.png" 
+        alt="PRAMAN" 
+        className="h-24 w-auto mx-auto mb-6"
+      />
       <p className="text-xl font-semibold text-gray-800 max-w-md mx-auto">
         Choose your role to get started
       </p>

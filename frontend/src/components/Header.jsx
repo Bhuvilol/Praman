@@ -59,9 +59,11 @@ function Header() {
       <div className="max-w-7xl mx-auto px-12 sm:px-16 lg:px-20">
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center">
-            <h1 className="text-3xl font-black text-gray-900 tracking-wide" style={{ fontFamily: 'Nunito, -apple-system, BlinkMacSystemFont, sans-serif' }}>
-              PRAMAN
-            </h1>
+            <img 
+              src="/logod.png" 
+              alt="PRAMAN" 
+              className="h-10 w-auto"
+            />
           </div>
           
           <div className="flex items-center space-x-6">

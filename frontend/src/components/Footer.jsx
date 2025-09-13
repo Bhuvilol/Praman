@@ -4,9 +4,11 @@ function Footer() {
       <div className="max-w-7xl mx-auto px-12 sm:px-16 lg:px-20 py-8">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           <div className="col-span-1 md:col-span-2">
-            <h3 className="text-3xl font-black text-gray-900 mb-4" style={{ fontFamily: 'Nunito, -apple-system, BlinkMacSystemFont, sans-serif' }}>
-              PRAMAN
-            </h3>
+            <img 
+              src="/logod.png" 
+              alt="PRAMAN" 
+              className="h-12 w-auto mb-4"
+            />
             <p className="text-gray-700 font-medium max-w-md">
               Connecting contributors and consumers in a decentralized ecosystem 
               built on trust and transparency.
