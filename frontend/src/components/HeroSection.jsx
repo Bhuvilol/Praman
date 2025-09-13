@@ -1,8 +1,10 @@
+import logo from '/logod.png'
+
 function HeroSection() {
   return (
     <div className="text-center mb-8">
       <img 
-        src="/logod.png" 
+        src={logo} 
         alt="PRAMAN" 
         className="h-24 w-auto mx-auto mb-6"
       />

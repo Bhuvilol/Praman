@@ -1,3 +1,5 @@
+import logo from '/logod.png'
+
 function Footer() {
   return (
     <footer className="bg-white border-t border-gray-200">
@@ -5,7 +7,7 @@ function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           <div className="col-span-1 md:col-span-2">
             <img 
-              src="/logod.png" 
+              src={logo} 
               alt="PRAMAN" 
               className="h-20 w-auto mb-4"
             />
