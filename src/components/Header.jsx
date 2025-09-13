@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import logo from '/logod.png'
 
 function Header() {
   const [walletAddress, setWalletAddress] = useState('')
@@ -60,7 +61,7 @@ function Header() {
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center">
             <img 
-              src="/logod.png" 
+              src={logo} 
               alt="PRAMAN" 
               className="h-16 w-auto"
             />
