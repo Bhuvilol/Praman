@@ -11,7 +11,9 @@
     "deploy:hardhat": "hardhat run scripts/deploy.js --network hardhat",
     "frontend:dev": "cd frontend && npm run dev",
     "frontend:build": "cd frontend && npm run build",
-    "start:local": "npm run node & npm run deploy:local & npm run frontend:dev"
+    "start:local": "npm run node & npm run deploy:local & npm run frontend:dev",
+    "build": "cd frontend && npm install && npm run build",
+    "install": "cd frontend && npm install"
   },
   "keywords": [
     "blockchain",
