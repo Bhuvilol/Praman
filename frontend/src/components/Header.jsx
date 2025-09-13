@@ -62,7 +62,7 @@ function Header() {
             <img 
               src="/logod.png" 
               alt="PRAMAN" 
-              className="h-10 w-auto"
+              className="h-16 w-auto"
             />
           </div>
           

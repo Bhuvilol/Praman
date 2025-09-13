@@ -7,7 +7,7 @@ function Footer() {
             <img 
               src="/logod.png" 
               alt="PRAMAN" 
-              className="h-12 w-auto mb-4"
+              className="h-20 w-auto mb-4"
             />
             <p className="text-gray-700 font-medium max-w-md">
               Connecting contributors and consumers in a decentralized ecosystem 
