@@ -26,6 +26,7 @@ contract PRAMANSupplyChain {
         string supplyChainStage; // "genesis", "in_transit", "received"
         string previousActor;
         string nextActor;
+        string currentHolder; // Track who currently holds the batch
         uint256 createdAt;
         uint256 updatedAt;
         bool exists;
@@ -143,15 +144,17 @@ contract PRAMANSupplyChain {
         return keccak256(bytes(users[_user].role)) == keccak256(bytes("farmer"));
     }
 
-    // Function to check if user can send batches (farmers, collectors, suppliers, distributors)
+    // Function to check if user can send batches (farmers, collectors, labs, suppliers, distributors, retailers)
     function canSendBatch(address _user) public view returns (bool) {
         require(users[_user].exists, "User not registered");
         bytes32 roleHash = keccak256(bytes(users[_user].role));
         return (
             roleHash == keccak256(bytes("farmer")) ||
             roleHash == keccak256(bytes("collector")) ||
+            roleHash == keccak256(bytes("lab")) ||
             roleHash == keccak256(bytes("supplier")) ||
-            roleHash == keccak256(bytes("distributor"))
+            roleHash == keccak256(bytes("distributor")) ||
+            roleHash == keccak256(bytes("retailer"))
         );
     }
 
@@ -280,6 +283,7 @@ contract PRAMANSupplyChain {
             supplyChainStage: "genesis",
             previousActor: "",
             nextActor: "",
+            currentHolder: users[msg.sender].regdNo, // Initially held by the creator
             createdAt: block.timestamp,
             updatedAt: block.timestamp,
             exists: true
@@ -312,6 +316,7 @@ contract PRAMANSupplyChain {
         batch.supplyChainStage = "in_transit";
         batch.previousActor = users[msg.sender].regdNo;
         batch.nextActor = _recipientRegdNo;
+        batch.currentHolder = ""; // Clear current holder during transit
         batch.signatureHash = _newSignatureHash;
         batch.transactionHash = "";
         batch.updatedAt = block.timestamp;
@@ -353,6 +358,7 @@ contract PRAMANSupplyChain {
         batch.supplyChainStage = "received";
         batch.previousActor = batch.previousActor; // Keep previous actor
         batch.nextActor = ""; // Clear next actor
+        batch.currentHolder = users[msg.sender].regdNo; // Set current holder to receiver
         batch.signatureHash = _newSignatureHash;
         batch.transactionHash = "";
         batch.updatedAt = block.timestamp;

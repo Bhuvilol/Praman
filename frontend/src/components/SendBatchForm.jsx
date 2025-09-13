@@ -53,9 +53,22 @@ function SendBatchForm({ user, batches, onClose, onSubmit }) {
     'Courier Service', 'Cold Chain Transport', 'Express Delivery'
   ]
 
-  const recipientRoles = [
-    'Collector', 'Lab Inspector', 'Supplier', 'Distributor', 'Retailer'
-  ]
+  // Get valid recipient roles based on current user's role
+  const getValidRecipientRoles = (userRole) => {
+    const roleMapping = {
+      'farmer': ['collector', 'supplier'],
+      'collector': ['lab', 'supplier'],
+      'lab': ['supplier', 'distributor'],
+      'supplier': ['distributor', 'retailer'],
+      'distributor': ['retailer', 'consumer'],
+      'retailer': ['consumer'],
+      'consumer': []
+    }
+    
+    return roleMapping[userRole?.toLowerCase()] || []
+  }
+
+  const recipientRoles = getValidRecipientRoles(user?.role)
 
   // Initialize form data with real APIs
   useEffect(() => {
@@ -279,6 +292,16 @@ function SendBatchForm({ user, batches, onClose, onSubmit }) {
                       <option key={role} value={role}>{role}</option>
                     ))}
                   </select>
+                  {recipientRoles.length === 0 && (
+                    <p className="text-red-500 text-sm mt-1">
+                      ⚠️ Your role ({user?.role}) cannot send batches to other roles.
+                    </p>
+                  )}
+                  {recipientRoles.length > 0 && (
+                    <p className="text-green-600 text-sm mt-1">
+                      ✅ You can send to: {recipientRoles.join(', ')}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">

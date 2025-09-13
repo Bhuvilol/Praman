@@ -106,7 +106,57 @@ function DashboardPage() {
             let userBatches = allBatches.filter(batch => {
               const userRegdNo = blockchainUser.regdNo
               
-              // Check if user is involved in any way:
+              // For collectors, show batches they have received or are supposed to receive
+              if (blockchainUser.role === 'collector') {
+                return (
+                  // Batch is in transit and this collector is the next actor
+                  (batch.status === 'in_transit' && batch.nextActor === userRegdNo) ||
+                  // Batch was sent by this collector
+                  batch.previousActor === userRegdNo ||
+                  // Batch is currently held by this collector
+                  batch.currentHolder === userRegdNo
+                )
+              }
+              
+              // For farmers, show batches they created or are involved with
+              if (blockchainUser.role === 'farmer') {
+                return (
+                  // Created by user
+                  batch.regdNo === userRegdNo ||
+                  // Sent by user (previous actor)
+                  batch.previousActor === userRegdNo ||
+                  // User is in the supply chain history (if we track that)
+                  (batch.supplyChainHistory && batch.supplyChainHistory.includes(userRegdNo)) ||
+                  // User is the current owner (if we track that)
+                  batch.currentOwner === userRegdNo
+                )
+              }
+              
+              // For collectors, show batches they have received or are supposed to receive
+              if (blockchainUser.role === 'collector') {
+                return (
+                  // Batch is in transit and this collector is the next actor
+                  (batch.status === 'in_transit' && batch.nextActor === userRegdNo) ||
+                  // Batch was sent by this collector
+                  batch.previousActor === userRegdNo ||
+                  // Batch is currently held by this collector
+                  batch.currentHolder === userRegdNo
+                )
+              }
+              
+              // For lab, supplier, distributor, retailer - show batches they can receive or have received
+              if (['lab', 'supplier', 'distributor', 'retailer', 'consumer'].includes(blockchainUser.role)) {
+                return (
+                  // Batch is in transit and this user is the next actor
+                  (batch.status === 'in_transit' && batch.nextActor === userRegdNo) ||
+                  // Batch was sent by this user
+                  batch.previousActor === userRegdNo ||
+                  // Batch is currently held by this user
+                  batch.currentHolder === userRegdNo
+                )
+              }
+              
+              // Fallback for any other roles
               return (
                 // Created by user
                 batch.regdNo === userRegdNo ||
@@ -227,11 +277,32 @@ function DashboardPage() {
       // Initialize Web3 service
       await web3Service.initialize()
       
+      // Validate role interaction before sending
+      const currentUserRole = user?.role?.toLowerCase()
+      const recipientRole = batchData.recipientInfo.role?.toLowerCase()
+      
+      const validRoleInteractions = {
+        'farmer': ['collector', 'supplier'],
+        'collector': ['lab', 'supplier'],
+        'lab': ['supplier', 'distributor'],
+        'supplier': ['distributor', 'retailer'],
+        'distributor': ['retailer', 'consumer'],
+        'retailer': ['consumer'],
+        'consumer': []
+      }
+      
+      const canSend = validRoleInteractions[currentUserRole]?.includes(recipientRole)
+      
+      if (!canSend) {
+        const validRoles = validRoleInteractions[currentUserRole] || []
+        throw new Error(`Invalid role interaction: ${currentUserRole} cannot send to ${recipientRole}. Valid recipients: ${validRoles.join(', ')}`)
+      }
+      
       // Call blockchain contract to send batch
       const result = await web3Service.sendContractTransaction('sendBatch', [
         batchData.selectedBatch, // batchId
         batchData.recipientInfo.regdNo, // recipientRegdNo
-        batchData.transportMethod || 'Truck', // transportMethod
+        batchData.transportInfo?.method || 'Truck', // transportMethod
         batchData.blockchain?.signatureHash || '0x' + 'b'.repeat(64) // newSignatureHash
       ])
       
@@ -246,7 +317,16 @@ function DashboardPage() {
       }
     } catch (error) {
       console.error('❌ Error sending batch:', error)
-      alert(`Failed to send batch: ${error.message}`)
+      
+      // Provide more specific error messages
+      let errorMessage = error.message
+      if (error.message.includes('Invalid role interaction')) {
+        errorMessage = `❌ Role Restriction: ${error.message}`
+      } else if (error.message.includes('Internal JSON-RPC error')) {
+        errorMessage = '❌ Transaction failed: This is likely due to role restrictions or invalid parameters. Please check the recipient role and try again.'
+      }
+      
+      alert(`Failed to send batch: ${errorMessage}`)
     }
   }
 
@@ -257,10 +337,20 @@ function DashboardPage() {
       // Initialize Web3 service
       await web3Service.initialize()
       
+      // Convert qualityCheck object to string if it's an object
+      let qualityCheckString = 'Quality check passed'
+      if (batchData.qualityCheck) {
+        if (typeof batchData.qualityCheck === 'object') {
+          qualityCheckString = JSON.stringify(batchData.qualityCheck)
+        } else {
+          qualityCheckString = batchData.qualityCheck
+        }
+      }
+      
       // Call blockchain contract to receive batch
       const result = await web3Service.sendContractTransaction('receiveBatch', [
         batchData.selectedBatch || batchData.batchId, // batchId
-        batchData.qualityCheck || 'Quality check passed', // qualityCheck
+        qualityCheckString, // qualityCheck (must be string)
         batchData.blockchain?.signatureHash || '0x' + 'c'.repeat(64) // newSignatureHash
       ])
       
@@ -371,7 +461,9 @@ function DashboardPage() {
             <div className="space-y-4">
               <div className="text-center p-4 bg-emerald-50 rounded-lg">
                 <div className="text-3xl font-bold text-emerald-600">{batches.length}</div>
-                <div className="text-sm text-gray-600">Total Batches Created</div>
+                <div className="text-sm text-gray-600">
+                  {currentRole.canCreateGenesis ? 'Total Batches Created' : 'Total Batches Involved'}
+                </div>
               </div>
               
               <div className="grid grid-cols-2 gap-3">

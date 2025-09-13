@@ -13,8 +13,53 @@ class Web3Service {
   async initialize() {
     try {
       if (typeof window.ethereum !== 'undefined') {
-        this.web3 = new Web3(window.ethereum)
-        console.log('✅ Web3 initialized with MetaMask')
+        // Use custom RPC provider instead of MetaMask's default
+        // Try multiple RPC endpoints for better reliability
+        const rpcEndpoints = [
+          'https://ethereum-sepolia.publicnode.com',
+          'https://sepolia.drpc.org',
+          'https://rpc.sepolia.org'
+        ]
+        
+        let web3Instance = null
+        for (const rpcUrl of rpcEndpoints) {
+          try {
+            web3Instance = new Web3(rpcUrl)
+            // Test the connection
+            await web3Instance.eth.getBlockNumber()
+            console.log(`✅ Using RPC endpoint: ${rpcUrl}`)
+            break
+          } catch (error) {
+            console.log(`❌ RPC endpoint failed: ${rpcUrl}`)
+            continue
+          }
+        }
+        
+        if (!web3Instance) {
+          throw new Error('All RPC endpoints failed')
+        }
+        
+        this.web3 = web3Instance
+        
+        // Still use MetaMask for account management
+        this.web3.eth.accounts.wallet.clear()
+        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' })
+        if (accounts.length > 0) {
+          this.web3.eth.defaultAccount = accounts[0]
+        }
+        
+        // Check if MetaMask is on the correct network
+        const chainId = await window.ethereum.request({ method: 'eth_chainId' })
+        const sepoliaChainId = '0xaa36a7' // 11155111 in hex
+        
+        if (chainId !== sepoliaChainId) {
+          console.warn('⚠️ MetaMask is not on Sepolia network. Current chain ID:', chainId)
+          console.log('🔧 Please switch to Sepolia testnet in MetaMask')
+        } else {
+          console.log('✅ MetaMask is connected to Sepolia testnet')
+        }
+        
+        console.log('✅ Web3 initialized with custom RPC and MetaMask accounts')
         return true
       } else {
         console.error('❌ MetaMask not detected')
@@ -33,8 +78,13 @@ class Web3Service {
         throw new Error('Web3 not initialized')
       }
       
-      const accounts = await this.web3.eth.getAccounts()
-      return accounts[0] || null
+      // Get account from MetaMask directly
+      if (typeof window.ethereum !== 'undefined') {
+        const accounts = await window.ethereum.request({ method: 'eth_accounts' })
+        return accounts[0] || null
+      }
+      
+      return null
     } catch (error) {
       console.error('❌ Error getting current account:', error)
       return null
@@ -214,12 +264,36 @@ class Web3Service {
         throw new Error('No account connected')
       }
       
-      const transaction = this.contract.methods[methodName](...args)
-      const gasEstimate = await transaction.estimateGas({ from: account })
+      console.log(`🔄 Preparing transaction for ${methodName} with args:`, args)
+      console.log(`👤 From account:`, account)
       
+      // Ensure contract is properly loaded
+      if (!this.contract) {
+        await this.loadDeployedContract()
+      }
+      
+      const transaction = this.contract.methods[methodName](...args)
+      
+      // Estimate gas with better error handling
+      let gasEstimate
+      try {
+        gasEstimate = await transaction.estimateGas({ from: account })
+        console.log(`⛽ Gas estimate:`, gasEstimate)
+      } catch (gasError) {
+        console.error(`❌ Gas estimation failed:`, gasError)
+        // Use a default gas limit if estimation fails
+        gasEstimate = BigInt(500000)
+        console.log(`⚠️ Using default gas limit:`, gasEstimate)
+      }
+      
+      // Add buffer to gas estimate (handle BigInt properly)
+      const gasWithBuffer = gasEstimate + (gasEstimate / BigInt(5)) // Add 20% buffer
+      
+      // Use MetaMask for transaction signing
       const result = await transaction.send({
         from: account,
-        gas: gasEstimate,
+        gas: gasWithBuffer.toString(),
+        gasPrice: '20000000000', // 20 gwei
         ...options
       })
       
@@ -227,71 +301,49 @@ class Web3Service {
       return result
     } catch (error) {
       console.error(`❌ Error sending contract transaction ${methodName}:`, error)
-      return null
+      
+      // Provide more specific error information
+      if (error.message && error.message.includes('Internal JSON-RPC error')) {
+        console.error(`🔍 This is likely a contract revert. Check:`)
+        console.error(`   - User permissions/role restrictions`)
+        console.error(`   - Contract state requirements`)
+        console.error(`   - Input parameter validation`)
+      }
+      
+      throw error // Re-throw to let the calling code handle it
     }
   }
 
   // ===== BLOCKCHAIN FUNCTIONS (IMPLEMENTED FOR LOCAL BLOCKCHAIN) =====
   
   // Contract configuration for local blockchain
-  CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+  CONTRACT_ADDRESS = "0x507067CCA9941B9A8E42aB237a7797600aDA0358"
   CONTRACT_ABI = [
     // Contract ABI will be loaded from artifacts
   ]
 
-  // Load contract ABI from artifacts
+  // Load contract ABI from deployed contract
   async loadContractABI() {
     try {
-      // In a real deployment, you would load this from the artifacts folder
-      // For now, we'll use a simplified ABI with the essential functions
+      // Load the ABI from the deployed contract file
+      const response = await fetch('/SEPOLIA_ABI.json')
+      if (!response.ok) {
+        throw new Error(`Failed to load contract ABI: ${response.status}`)
+      }
+      
+      const abi = await response.json()
+      this.CONTRACT_ABI = abi
+      console.log('✅ Contract ABI loaded successfully from SEPOLIA_ABI.json')
+    } catch (error) {
+      console.error('❌ Error loading contract ABI:', error)
+      // Fallback to hardcoded ABI if loading fails
+      console.log('⚠️ Falling back to hardcoded ABI')
       this.CONTRACT_ABI = [
         {
           "inputs": [{"internalType": "string", "name": "_name", "type": "string"}, {"internalType": "string", "name": "_email", "type": "string"}, {"internalType": "string", "name": "_regdNo", "type": "string"}, {"internalType": "string", "name": "_role", "type": "string"}],
           "name": "registerUser",
           "outputs": [],
           "stateMutability": "nonpayable",
-          "type": "function"
-        },
-        {
-          "inputs": [{"internalType": "string", "name": "_batchId", "type": "string"}, {"internalType": "string", "name": "_cropName", "type": "string"}, {"internalType": "uint256", "name": "_quantity", "type": "uint256"}, {"internalType": "string", "name": "_variant", "type": "string"}, {"internalType": "string", "name": "_condition", "type": "string"}, {"internalType": "string", "name": "_contaminationLevel", "type": "string"}, {"internalType": "uint256", "name": "_latitude", "type": "uint256"}, {"internalType": "uint256", "name": "_longitude", "type": "uint256"}, {"internalType": "string", "name": "_location", "type": "string"}, {"internalType": "uint256", "name": "_rainfall", "type": "uint256"}, {"internalType": "uint256", "name": "_humidity", "type": "uint256"}, {"internalType": "uint256", "name": "_temperature", "type": "uint256"}, {"internalType": "uint256", "name": "_windSpeed", "type": "uint256"}, {"internalType": "uint256", "name": "_pressure", "type": "uint256"}, {"internalType": "string", "name": "_signatureHash", "type": "string"}],
-          "name": "createGenesisBatch",
-          "outputs": [],
-          "stateMutability": "nonpayable",
-          "type": "function"
-        },
-        {
-          "inputs": [{"internalType": "string", "name": "_batchId", "type": "string"}, {"internalType": "string", "name": "_recipientRegdNo", "type": "string"}, {"internalType": "string", "name": "_transportMethod", "type": "string"}, {"internalType": "string", "name": "_newSignatureHash", "type": "string"}],
-          "name": "sendBatch",
-          "outputs": [],
-          "stateMutability": "nonpayable",
-          "type": "function"
-        },
-        {
-          "inputs": [{"internalType": "string", "name": "_batchId", "type": "string"}, {"internalType": "string", "name": "_qualityCheck", "type": "string"}, {"internalType": "string", "name": "_newSignatureHash", "type": "string"}],
-          "name": "receiveBatch",
-          "outputs": [],
-          "stateMutability": "nonpayable",
-          "type": "function"
-        },
-        {
-          "inputs": [{"internalType": "string", "name": "_batchId", "type": "string"}],
-          "name": "getBatch",
-          "outputs": [{"components": [{"internalType": "string", "name": "batchId", "type": "string"}, {"internalType": "string", "name": "regdNo", "type": "string"}, {"internalType": "string", "name": "cropName", "type": "string"}, {"internalType": "uint256", "name": "quantity", "type": "uint256"}, {"internalType": "string", "name": "variant", "type": "string"}, {"internalType": "string", "name": "condition", "type": "string"}, {"internalType": "string", "name": "contaminationLevel", "type": "string"}, {"internalType": "uint256", "name": "latitude", "type": "uint256"}, {"internalType": "uint256", "name": "longitude", "type": "uint256"}, {"internalType": "string", "name": "location", "type": "string"}, {"internalType": "uint256", "name": "rainfall", "type": "uint256"}, {"internalType": "uint256", "name": "humidity", "type": "uint256"}, {"internalType": "uint256", "name": "temperature", "type": "uint256"}, {"internalType": "uint256", "name": "windSpeed", "type": "uint256"}, {"internalType": "uint256", "name": "pressure", "type": "uint256"}, {"internalType": "string", "name": "signatureHash", "type": "string"}, {"internalType": "string", "name": "transactionHash", "type": "string"}, {"internalType": "uint256", "name": "blockNumber", "type": "uint256"}, {"internalType": "string", "name": "status", "type": "string"}, {"internalType": "string", "name": "supplyChainStage", "type": "string"}, {"internalType": "string", "name": "previousActor", "type": "string"}, {"internalType": "string", "name": "nextActor", "type": "string"}, {"internalType": "uint256", "name": "createdAt", "type": "uint256"}, {"internalType": "uint256", "name": "updatedAt", "type": "uint256"}, {"internalType": "bool", "name": "exists", "type": "bool"}], "internalType": "struct PRAMANSupplyChain.Batch", "name": "", "type": "tuple"}],
-          "stateMutability": "view",
-          "type": "function"
-        },
-        {
-          "inputs": [],
-          "name": "getAllBatches",
-          "outputs": [{"components": [{"internalType": "string", "name": "batchId", "type": "string"}, {"internalType": "string", "name": "regdNo", "type": "string"}, {"internalType": "string", "name": "cropName", "type": "string"}, {"internalType": "uint256", "name": "quantity", "type": "uint256"}, {"internalType": "string", "name": "variant", "type": "string"}, {"internalType": "string", "name": "condition", "type": "string"}, {"internalType": "string", "name": "contaminationLevel", "type": "string"}, {"internalType": "uint256", "name": "latitude", "type": "uint256"}, {"internalType": "uint256", "name": "longitude", "type": "uint256"}, {"internalType": "string", "name": "location", "type": "string"}, {"internalType": "uint256", "name": "rainfall", "type": "uint256"}, {"internalType": "uint256", "name": "humidity", "type": "uint256"}, {"internalType": "uint256", "name": "temperature", "type": "uint256"}, {"internalType": "uint256", "name": "windSpeed", "type": "uint256"}, {"internalType": "uint256", "name": "pressure", "type": "uint256"}, {"internalType": "string", "name": "signatureHash", "type": "string"}, {"internalType": "string", "name": "transactionHash", "type": "string"}, {"internalType": "uint256", "name": "blockNumber", "type": "uint256"}, {"internalType": "string", "name": "status", "type": "string"}, {"internalType": "string", "name": "supplyChainStage", "type": "string"}, {"internalType": "string", "name": "previousActor", "type": "string"}, {"internalType": "string", "name": "nextActor", "type": "string"}, {"internalType": "uint256", "name": "createdAt", "type": "uint256"}, {"internalType": "uint256", "name": "updatedAt", "type": "uint256"}, {"internalType": "bool", "name": "exists", "type": "bool"}], "internalType": "struct PRAMANSupplyChain.Batch[]", "name": "", "type": "tuple[]"}],
-          "stateMutability": "view",
-          "type": "function"
-        },
-        {
-          "inputs": [{"internalType": "address", "name": "_walletAddress", "type": "address"}],
-          "name": "getUser",
-          "outputs": [{"components": [{"internalType": "string", "name": "name", "type": "string"}, {"internalType": "string", "name": "email", "type": "string"}, {"internalType": "string", "name": "regdNo", "type": "string"}, {"internalType": "string", "name": "role", "type": "string"}, {"internalType": "address", "name": "walletAddress", "type": "address"}, {"internalType": "bool", "name": "exists", "type": "bool"}], "internalType": "struct PRAMANSupplyChain.User", "name": "", "type": "tuple"}],
-          "stateMutability": "view",
           "type": "function"
         },
         {
@@ -302,65 +354,13 @@ class Web3Service {
           "type": "function"
         },
         {
-          "inputs": [{"internalType": "address", "name": "_user", "type": "address"}],
-          "name": "canCreateGenesisBatch",
-          "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
-          "stateMutability": "view",
-          "type": "function"
-        },
-        {
-          "inputs": [{"internalType": "address", "name": "_user", "type": "address"}],
-          "name": "canSendBatch",
-          "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
-          "stateMutability": "view",
-          "type": "function"
-        },
-        {
-          "inputs": [{"internalType": "address", "name": "_user", "type": "address"}],
-          "name": "canReceiveBatch",
-          "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
-          "stateMutability": "view",
-          "type": "function"
-        },
-        {
-          "inputs": [{"internalType": "address", "name": "_user", "type": "address"}],
-          "name": "getUserRole",
-          "outputs": [{"internalType": "string", "name": "", "type": "string"}],
-          "stateMutability": "view",
-          "type": "function"
-        },
-        {
-          "inputs": [{"internalType": "string", "name": "_senderRole", "type": "string"}, {"internalType": "string", "name": "_recipientRole", "type": "string"}],
-          "name": "canInteractWithRole",
-          "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
-          "stateMutability": "pure",
-          "type": "function"
-        },
-        {
           "inputs": [],
-          "name": "getValidRoles",
-          "outputs": [{"internalType": "string[7]", "name": "", "type": "string[7]"}],
-          "stateMutability": "pure",
-          "type": "function"
-        },
-        {
-          "inputs": [{"internalType": "address", "name": "_address", "type": "address"}, {"internalType": "string", "name": "_newRole", "type": "string"}],
-          "name": "isAddressRegisteredWithDifferentRole",
-          "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
-          "stateMutability": "view",
-          "type": "function"
-        },
-        {
-          "inputs": [{"internalType": "string", "name": "_regdNo", "type": "string"}],
-          "name": "getAddressByRegdNo",
-          "outputs": [{"internalType": "address", "name": "", "type": "address"}],
+          "name": "getAllBatches",
+          "outputs": [{"components": [{"internalType": "string", "name": "batchId", "type": "string"}, {"internalType": "string", "name": "regdNo", "type": "string"}, {"internalType": "string", "name": "cropName", "type": "string"}, {"internalType": "uint256", "name": "quantity", "type": "uint256"}, {"internalType": "string", "name": "variant", "type": "string"}, {"internalType": "string", "name": "condition", "type": "string"}, {"internalType": "string", "name": "contaminationLevel", "type": "string"}, {"internalType": "uint256", "name": "latitude", "type": "uint256"}, {"internalType": "uint256", "name": "longitude", "type": "uint256"}, {"internalType": "string", "name": "location", "type": "string"}, {"internalType": "uint256", "name": "rainfall", "type": "uint256"}, {"internalType": "uint256", "name": "humidity", "type": "uint256"}, {"internalType": "uint256", "name": "temperature", "type": "uint256"}, {"internalType": "uint256", "name": "windSpeed", "type": "uint256"}, {"internalType": "uint256", "name": "pressure", "type": "uint256"}, {"internalType": "string", "name": "signatureHash", "type": "string"}, {"internalType": "string", "name": "transactionHash", "type": "string"}, {"internalType": "uint256", "name": "blockNumber", "type": "uint256"}, {"internalType": "string", "name": "status", "type": "string"}, {"internalType": "string", "name": "supplyChainStage", "type": "string"}, {"internalType": "string", "name": "previousActor", "type": "string"}, {"internalType": "string", "name": "nextActor", "type": "string"}, {"internalType": "uint256", "name": "createdAt", "type": "uint256"}, {"internalType": "uint256", "name": "updatedAt", "type": "uint256"}, {"internalType": "bool", "name": "exists", "type": "bool"}], "internalType": "struct PRAMANSupplyChain.Batch[]", "name": "", "type": "tuple[]"}],
           "stateMutability": "view",
           "type": "function"
         }
       ]
-      console.log('✅ Contract ABI loaded successfully')
-    } catch (error) {
-      console.error('❌ Error loading contract ABI:', error)
     }
   }
 
@@ -381,7 +381,11 @@ class Web3Service {
       
       await this.loadContractABI()
       
-      this.contract = new this.web3.eth.Contract(this.CONTRACT_ABI, this.CONTRACT_ADDRESS)
+      // Create contract instance with MetaMask provider for transactions
+      const metaMaskWeb3 = new Web3(window.ethereum)
+      this.contract = new metaMaskWeb3.eth.Contract(this.CONTRACT_ABI, this.CONTRACT_ADDRESS)
+      this.contractAddress = this.CONTRACT_ADDRESS
+      
       console.log('✅ Deployed contract loaded at:', this.CONTRACT_ADDRESS)
       return this.contract
     } catch (error) {
@@ -390,14 +394,18 @@ class Web3Service {
     }
   }
 
-  // Get all batches from contract
+  // Get all batches from contract (using custom RPC for reading)
   async getAllBatches() {
     try {
-      if (!this.contract) {
-        await this.loadDeployedContract()
+      if (!this.web3) {
+        throw new Error('Web3 not initialized')
       }
       
-      return await this.contract.methods.getAllBatches().call()
+      await this.loadContractABI()
+      
+      // Create a read-only contract instance using custom RPC
+      const readContract = new this.web3.eth.Contract(this.CONTRACT_ABI, this.CONTRACT_ADDRESS)
+      return await readContract.methods.getAllBatches().call()
     } catch (error) {
       console.error(`❌ Error getting all batches:`, error)
       throw error
@@ -436,16 +444,20 @@ class Web3Service {
     }
   }
 
-  // Check if user is registered
+  // Check if user is registered (using custom RPC for reading)
   async isUserRegistered(address) {
     try {
       console.log('🔍 Web3Service: Checking registration for:', address)
       
-      if (!this.contract) {
-        await this.loadDeployedContract()
+      if (!this.web3) {
+        throw new Error('Web3 not initialized')
       }
       
-      const result = await this.contract.methods.isUserRegistered(address).call()
+      await this.loadContractABI()
+      
+      // Create a read-only contract instance using custom RPC
+      const readContract = new this.web3.eth.Contract(this.CONTRACT_ABI, this.CONTRACT_ADDRESS)
+      const result = await readContract.methods.isUserRegistered(address).call()
       console.log('🔍 Web3Service: Raw result from contract:', result, typeof result)
       
       // Ensure we return a boolean value
@@ -570,6 +582,59 @@ class Web3Service {
     } catch (error) {
       console.error('❌ Error getting address by registration number:', error)
       return null
+    }
+  }
+
+  // Switch MetaMask to Sepolia network
+  async switchToSepoliaNetwork() {
+    try {
+      if (typeof window.ethereum === 'undefined') {
+        throw new Error('MetaMask not detected')
+      }
+
+      const sepoliaChainId = '0xaa36a7' // 11155111 in hex
+      
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: sepoliaChainId }],
+        })
+        console.log('✅ Switched to Sepolia network')
+        return true
+      } catch (switchError) {
+        // If the network doesn't exist, add it
+        if (switchError.code === 4902) {
+          try {
+            await window.ethereum.request({
+              method: 'wallet_addEthereumChain',
+              params: [
+                {
+                  chainId: sepoliaChainId,
+                  chainName: 'Sepolia Test Network',
+                  nativeCurrency: {
+                    name: 'SepoliaETH',
+                    symbol: 'SepoliaETH',
+                    decimals: 18,
+                  },
+                  rpcUrls: ['https://ethereum-sepolia.publicnode.com'],
+                  blockExplorerUrls: ['https://sepolia.etherscan.io'],
+                },
+              ],
+            })
+            console.log('✅ Added and switched to Sepolia network')
+            return true
+          } catch (addError) {
+            console.error('❌ Error adding Sepolia network:', addError)
+            return false
+          }
+        } else {
+          console.error('❌ Error switching to Sepolia network:', switchError)
+          return false
+        }
+      }
+    } catch (error) {
+      console.error('❌ Error switching network:', error)
+      return false
     }
   }
 }
