@@ -1,0 +1,16 @@
+backend/
+scripts/
+test/
+hardhat.config.js
+package-lock.json
+node_modules/
+artifacts/
+cache/
+*.sol
+*.json
+!frontend/package.json
+!frontend/package-lock.json
+!frontend/public/
+!frontend/src/
+!frontend/vite.config.js
+!frontend/index.html
